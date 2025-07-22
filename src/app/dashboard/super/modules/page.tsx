@@ -6,10 +6,14 @@ import { CreateModuleForm } from '@/components/modules/create-module-form'
 export default async function ModulesPage() {
   const supabase = await createClient()
 
-  const { data: modules } = await supabase
+  const { data: modules, error: modulesError } = await supabase
     .from('modules')
     .select('*')
     .order('created_at', { ascending: false })
+
+  // Debug logging
+  console.log('Super user modules:', modules)
+  console.log('Super user modules error:', modulesError)
 
   return (
     <DashboardLayout>
@@ -20,6 +24,15 @@ export default async function ModulesPage() {
             <p className="mt-2 text-sm text-gray-700">
               Create and manage system modules that organizations can purchase.
             </p>
+          </div>
+        </div>
+
+        {/* Debug Info */}
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-green-800 mb-2">Super User Debug Information</h3>
+          <div className="text-sm text-green-700">
+            <p>Total modules in system: {modules?.length || 0}</p>
+            {modulesError && <p className="text-red-600">Error: {modulesError.message}</p>}
           </div>
         </div>
 

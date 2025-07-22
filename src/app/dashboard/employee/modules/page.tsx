@@ -78,6 +78,11 @@ export default async function EmployeeModulesPage() {
     !userModuleIds.has(module.id)
   )
 
+  // Debug logging
+  console.log('Employee accessible modules:', accessibleModules)
+  console.log('Organization modules:', organizationModules)
+  console.log('Available modules for request:', availableModules)
+
   const stats = [
     {
       name: 'My Modules',
@@ -143,6 +148,17 @@ export default async function EmployeeModulesPage() {
               </div>
             )
           })}
+        </div>
+
+        {/* Debug Info */}
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-yellow-800 mb-2">Employee Debug Information</h3>
+          <div className="text-sm text-yellow-700">
+            <p>My accessible modules: {accessibleModules?.length || 0}</p>
+            <p>Organization modules: {organizationModules?.length || 0}</p>
+            <p>Available for request: {availableModules?.length || 0}</p>
+            <p>Organization: {organization?.name}</p>
+          </div>
         </div>
 
         {/* Accessible Modules */}
