@@ -25,14 +25,18 @@ export default async function AdminModulesPage() {
   const supabase = await createClient()
 
   // Get admin's organization
-  const { data: adminData } = await supabase
+  const { data: adminData, error: adminError } = await supabase
     .from('users')
     .select(`
       *,
-      organizations!inner (*)
+      organizations!organization_id (*)
     `)
     .eq('id', user?.id)
     .single()
+
+  // Debug logging
+  console.log('Admin user data:', adminData)
+  console.log('Admin query error:', adminError)
 
   if (!adminData?.organizations) {
     return (
@@ -106,16 +110,6 @@ export default async function AdminModulesPage() {
           </div>
         </div>
 
-        {/* Debug Info */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-blue-800 mb-2">Debug Information</h3>
-          <div className="text-sm text-blue-700">
-            <p>Total modules in database: {availableModules?.length || 0}</p>
-            <p>Purchased modules: {purchasedModules?.length || 0}</p>
-            <p>Organization ID: {adminData.organizations.id}</p>
-            {modulesError && <p className="text-red-600">Error: {modulesError.message}</p>}
-          </div>
-        </div>
 
         {/* Stats */}
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">

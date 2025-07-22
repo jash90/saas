@@ -43,31 +43,31 @@ export default async function EmployeeModulesPage() {
   }
 
   // Get organization details
-  const { data: organization } = await supabase
+  const { data: organization, error: orgError } = await supabase
     .from('organizations')
     .select('*')
     .eq('id', user.organization_id)
     .single()
 
   // Get user's accessible modules
-  const { data: userModules } = await supabase
+  const { data: userModules, error: userModulesError } = await supabase
     .from('user_module_access')
     .select(`
       *,
       modules!inner (*)
     `)
     .eq('user_id', user.id)
-    .eq('is_active', true) as { data: UserModuleAccess[] | null }
+    .eq('is_active', true)
 
-  // Get all organization modules
-  const { data: orgModules } = await supabase
+  // Get all organization modules  
+  const { data: orgModules, error: orgModulesError } = await supabase
     .from('organization_modules')
     .select(`
       *,
       modules!inner (*)
     `)
     .eq('organization_id', user.organization_id)
-    .eq('is_active', true) as { data: OrganizationModule[] | null }
+    .eq('is_active', true)
 
   const userModuleIds = new Set(userModules?.map((um: UserModuleAccess) => um.module_id) || [])
   const accessibleModules = userModules?.map((um: UserModuleAccess) => um.modules) || []
@@ -79,9 +79,11 @@ export default async function EmployeeModulesPage() {
   )
 
   // Debug logging
-  console.log('Employee accessible modules:', accessibleModules)
-  console.log('Organization modules:', organizationModules)
+  console.log('Employee accessible modules:', userModules)
+  console.log('Organization modules:', orgModules)
   console.log('Available modules for request:', availableModules)
+  console.log('Organization data:', organization)
+  console.log('User organization_id:', user?.organization_id)
 
   const stats = [
     {
@@ -150,16 +152,6 @@ export default async function EmployeeModulesPage() {
           })}
         </div>
 
-        {/* Debug Info */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-yellow-800 mb-2">Employee Debug Information</h3>
-          <div className="text-sm text-yellow-700">
-            <p>My accessible modules: {accessibleModules?.length || 0}</p>
-            <p>Organization modules: {organizationModules?.length || 0}</p>
-            <p>Available for request: {availableModules?.length || 0}</p>
-            <p>Organization: {organization?.name}</p>
-          </div>
-        </div>
 
         {/* Accessible Modules */}
         {accessibleModules && accessibleModules.length > 0 && (
