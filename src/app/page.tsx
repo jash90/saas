@@ -1,20 +1,10 @@
-import { getUser } from '@/lib/auth'
-import { redirect } from 'next/navigation'
-
-export default async function HomePage() {
-  const user = await getUser()
-
-  if (user) {
-    // Redirect to appropriate dashboard based on user role
-    switch (user.role) {
-      case 'super_user':
-        redirect('/dashboard/super')
-      case 'admin':
-        redirect('/dashboard/admin')
-      default:
-        redirect('/dashboard/employee')
-    }
-  } else {
-    redirect('/auth/login')
-  }
+export default function HomePage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
+        <p className="mt-4 text-gray-600">Loading...</p>
+      </div>
+    </div>
+  )
 }

@@ -1,150 +1,147 @@
-import { createServerClient } from '@supabase/ssr'
-import { NextResponse, type NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { createMiddlewareClient } from '@/lib/supabase/server'
+import { UserRole } from '@/lib/database.types'
+
+// Define route access patterns
+const authRoutes = ['/auth/login', '/auth/register']
+
+// Role-based route mappings
+const roleRoutes: Record<UserRole, string> = {
+  super_user: '/dashboard/super',
+  admin: '/dashboard/admin', 
+  employee: '/dashboard/employee'
+}
+
+// Route protection patterns
+const protectedRoutePatterns = [
+  { pattern: /^\/dashboard\/super/, allowedRoles: ['super_user'] as UserRole[] },
+  { pattern: /^\/dashboard\/admin/, allowedRoles: ['admin'] as UserRole[] },
+  { pattern: /^\/dashboard\/employee/, allowedRoles: ['employee'] as UserRole[] },
+] as const
 
 export async function middleware(request: NextRequest) {
-  // Skip middleware if Supabase credentials are not set
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  const { pathname } = request.nextUrl
+  
+  // Skip middleware for static assets, API routes, and Next.js internals
+  if (
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/api/') ||
+    pathname.includes('.') ||
+    pathname.startsWith('/favicon.ico')
+  ) {
     return NextResponse.next()
   }
 
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          )
-          response = NextResponse.next({
-            request,
-          })
-          cookiesToSet.forEach(({ name, value }) =>
-            response.cookies.set(name, value)
-          )
-        },
-      },
-    }
-  )
-
   try {
-    // Refresh session if needed
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    // If auth fails, continue without redirects
-    if (authError) {
-      console.error('Auth error in middleware:', authError)
+    // Check if environment variables are available
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.log('Supabase environment variables not available, skipping auth check')
       return NextResponse.next()
     }
 
-    const isAuthPage = request.nextUrl.pathname.startsWith('/auth')
-    const isDashboardPage = request.nextUrl.pathname.startsWith('/dashboard')
-    const isSuperUserPage = request.nextUrl.pathname.startsWith('/dashboard/super')
-    const isAdminPage = request.nextUrl.pathname.startsWith('/dashboard/admin')
-    const isEmployeePage = request.nextUrl.pathname.startsWith('/dashboard/employee')
-
-    // Redirect unauthenticated users to login
-    if (!user && isDashboardPage) {
-      return NextResponse.redirect(new URL('/auth/login', request.url))
-    }
-
-    // Redirect authenticated users away from auth pages
-    if (user && isAuthPage) {
-      // Get user role to determine redirect destination
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-
-      if (userError) {
-        console.error('User data error in middleware:', userError)
-        // Fallback to employee role if database query fails
-        return NextResponse.redirect(new URL('/dashboard/employee', request.url))
+    // Create Supabase client and get user
+    const { supabase, response, user } = await createMiddlewareClient(request)
+    
+    // If no authenticated user
+    if (!user) {
+      // Allow access to auth pages
+      if (authRoutes.includes(pathname)) {
+        return response
       }
-
-      const role = userData?.role || 'employee'
       
-      switch (role) {
-        case 'super_user':
-          return NextResponse.redirect(new URL('/dashboard/super', request.url))
-        case 'admin':
-          return NextResponse.redirect(new URL('/dashboard/admin', request.url))
-        default:
-          return NextResponse.redirect(new URL('/dashboard/employee', request.url))
+      // Redirect to login for protected routes
+      if (pathname.startsWith('/dashboard') || pathname === '/') {
+        const loginUrl = new URL('/auth/login', request.url)
+        return NextResponse.redirect(loginUrl)
+      }
+      
+      return response
+    }
+
+    // User is authenticated - get user profile data
+    let userData = null
+    try {
+      const { data } = await supabase
+        .from('users')
+        .select('id, email, full_name, role, organization_id')
+        .eq('id', user.id)
+        .single()
+      
+      userData = data
+    } catch (error) {
+      console.error('User data error in middleware:', error)
+      // If we can't get user data, redirect to login
+      if (!authRoutes.includes(pathname)) {
+        const loginUrl = new URL('/auth/login', request.url)
+        return NextResponse.redirect(loginUrl)
+      }
+      return response
+    }
+
+    if (!userData) {
+      // User exists in auth but not in public.users table
+      if (!authRoutes.includes(pathname)) {
+        const loginUrl = new URL('/auth/login', request.url)
+        return NextResponse.redirect(loginUrl)
+      }
+      return response
+    }
+
+    // Authenticated user trying to access auth pages - redirect to dashboard
+    if (authRoutes.includes(pathname)) {
+      const dashboardUrl = new URL(roleRoutes[userData.role as UserRole], request.url)
+      return NextResponse.redirect(dashboardUrl)
+    }
+
+    // Root path - redirect to appropriate dashboard
+    if (pathname === '/') {
+      const dashboardUrl = new URL(roleRoutes[userData.role as UserRole], request.url)
+      return NextResponse.redirect(dashboardUrl)
+    }
+
+    // Check role-based access for protected routes
+    for (const { pattern, allowedRoles } of protectedRoutePatterns) {
+      if (pattern.test(pathname)) {
+        if (!allowedRoles.includes(userData.role as UserRole)) {
+          // User doesn't have permission - redirect to their dashboard
+          const dashboardUrl = new URL(roleRoutes[userData.role as UserRole], request.url)
+          return NextResponse.redirect(dashboardUrl)
+        }
+        break
       }
     }
 
-    // Role-based access control for dashboard pages
-    if (user && isDashboardPage) {
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-
-      if (userError) {
-        console.error('User data error in middleware:', userError)
-        // Allow access to employee pages if database query fails
-        if (isEmployeePage) {
-          return NextResponse.next()
-        }
-        // Redirect to employee dashboard as fallback
-        return NextResponse.redirect(new URL('/dashboard/employee', request.url))
-      }
-
-      const role = userData?.role || 'employee'
-
-      // Super user pages
-      if (isSuperUserPage && role !== 'super_user') {
-        return NextResponse.redirect(new URL('/dashboard/unauthorized', request.url))
-      }
-
-      // Admin pages
-      if (isAdminPage && !['super_user', 'admin'].includes(role)) {
-        return NextResponse.redirect(new URL('/dashboard/unauthorized', request.url))
-      }
-
-      // Employee pages - allow if role is employee or if database query failed
-      if (isEmployeePage && role !== 'employee' && !['super_user', 'admin'].includes(role)) {
-        return NextResponse.redirect(new URL('/dashboard/unauthorized', request.url))
-      }
-
-      // Redirect to appropriate dashboard based on role (only for exact /dashboard path)
-      if (request.nextUrl.pathname === '/dashboard') {
-        switch (role) {
-          case 'super_user':
-            return NextResponse.redirect(new URL('/dashboard/super', request.url))
-          case 'admin':
-            return NextResponse.redirect(new URL('/dashboard/admin', request.url))
-          default:
-            return NextResponse.redirect(new URL('/dashboard/employee', request.url))
-        }
-      }
+    // Default dashboard redirect for /dashboard path
+    if (pathname === '/dashboard') {
+      const dashboardUrl = new URL(roleRoutes[userData.role as UserRole], request.url)
+      return NextResponse.redirect(dashboardUrl)
     }
 
     return response
+    
   } catch (error) {
     console.error('Middleware error:', error)
-    // Continue without redirects if there are any unexpected errors
-    return NextResponse.next()
+    
+    // On any error, allow access to auth routes, otherwise redirect to login
+    if (authRoutes.includes(pathname)) {
+      return NextResponse.next()
+    }
+    
+    const loginUrl = new URL('/auth/login', request.url)
+    return NextResponse.redirect(loginUrl)
   }
 }
 
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder files
+     */
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\..*$).*)',
   ],
 } 

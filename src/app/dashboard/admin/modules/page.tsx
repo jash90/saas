@@ -29,7 +29,7 @@ export default async function AdminModulesPage() {
     .from('users')
     .select(`
       *,
-      organizations (*)
+      organizations!inner (*)
     `)
     .eq('id', user?.id)
     .single()
@@ -60,14 +60,14 @@ export default async function AdminModulesPage() {
     .from('organization_modules')
     .select(`
       *,
-      modules (*)
+      modules!inner (*)
     `)
     .eq('organization_id', adminData.organizations.id)
     .eq('is_active', true) as { data: OrganizationModule[] | null }
 
-  const purchasedModuleIds = new Set(purchasedModules?.map(pm => pm.modules.id) || [])
+  const purchasedModuleIds = new Set(purchasedModules?.map((pm: OrganizationModule) => pm.modules.id) || [])
   
-  const totalSpent = purchasedModules?.reduce((sum, pm) => sum + pm.modules.price, 0) || 0
+  const totalSpent = purchasedModules?.reduce((sum: number, pm: OrganizationModule) => sum + Number(pm.modules.price), 0) || 0
 
   const stats = [
     {
